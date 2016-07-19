@@ -18,7 +18,7 @@ int flag;
 
 static chunk arr[POOLSIZE];														//static ensures that scope of this variable is limited to this file. Similar to private. Hence extern arr[] will not work in calling functions in separate file.
 
-int init_pool(int blocksize)													//No need for thread-safe as this should be called before forking
+int init_pool(int blocksize)					//No need for thread-safe as this should be called before forking
 {
 	int j;
 	for(j = 0; j<POOLSIZE; j++)
@@ -50,14 +50,13 @@ void* alloc()
 	for(i = 0; i<POOLSIZE; i++)
 	{
 		pthread_mutex_lock(&(locks[i]));
-			if((arr+i) == NULL)
+			/*if((arr+i) == NULL)
 			{
 				return NULL;
-			}
+			}*/
 		
 			if(!arr[i].flag)
 			{
-				pthread_mutex_unlock(&(locks[i]));
 				break;
 			}
 		pthread_mutex_unlock(&(locks[i]));
@@ -67,9 +66,7 @@ void* alloc()
 	{
 		return NULL;
 	}
-	
-	pthread_mutex_lock(&(locks[i]));
-		arr[i].flag = 1;
+	arr[i].flag = 1;
 	pthread_mutex_unlock(&(locks[i]));
 	
 	return arr[i].ptr;
@@ -82,11 +79,11 @@ int ret(void* pt, int blocksize)
 	for(i = 0; i<POOLSIZE; i++)
 	{
 	pthread_mutex_lock(&(locks[i]));
-		if((arr+i) == NULL)
+		/*if((arr+i) == NULL)
 		{
 			pthread_mutex_unlock(&(locks[i]));
 			return POOLDEAD;
-		}
+		}*/
 		
 		if(pt==arr[i].ptr)
 		{
