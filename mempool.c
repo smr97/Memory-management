@@ -5,26 +5,18 @@
 #include <assert.h>
 
 #define POOLSIZE 20
+#define offset 2
 
-enum interrorcodes{ALLOK = 0, NOTFOUND = 1, MALLOCFAIL = 2, POOLDEAD = 3, MEMSETFAIL = 4};
-//enum ptrerrorcodes{BUFFERFULL = NULL, DEADPOOL = NULL};						//See what can be done
+enum int_errorcodes{ALLOK = 0, NOTFOUND = 1, MALLOCFAIL = 2, POOLDEAD = 3, MEMSETFAIL = 4};
 
-pthread_mutex_t locks[POOLSIZE];
 
-typedef struct{
-void* ptr;
-int flag;
-} chunk;
+pthread_mutex_t lock;
 
-static chunk arr[POOLSIZE];														//static ensures that scope of this variable is limited to this file. Similar to private. Hence extern arr[] will not work in calling functions in separate file.
+static void* arr[POOLSIZE];					//static ensures that scope of this variable is limited to this file. Similar to private. Hence extern arr[] will not work in calling functions in separate file.
 
-int init_pool(int blocksize)					//No need for thread-safe as this should be called before forking
+int init_pool(int blocksize)
 {
-	int j;
-	for(j = 0; j<POOLSIZE; j++)
-	{
-		pthread_mutex_init(&(locks[j]), 0);	
-	}
+	pthread_mutex_init(&(lock), 0);	
 		
 	assert(blocksize>0);
 	
@@ -32,12 +24,17 @@ int init_pool(int blocksize)					//No need for thread-safe as this should be cal
 	
 	for(i = 0; i<POOLSIZE; i++)
 	{
-		arr[i].ptr = (void*) malloc(blocksize);
-		if(arr[i].ptr == NULL)
+		arr[i] = (void*) malloc(blocksize+offset);
+		if(arr[i] == NULL)
 		{
+			int j;
+			for(j = 0; j<=i; j++)
+			{
+				free(arr[j]);
+			}
 			return MALLOCFAIL;
 		}
-		arr[i].flag = 0;
+		*((char*) arr[i]) = '0';
 	}
 	
 	return ALLOK;
@@ -49,82 +46,53 @@ void* alloc()
 	
 	for(i = 0; i<POOLSIZE; i++)
 	{
-		pthread_mutex_lock(&(locks[i]));
-			/*if((arr+i) == NULL)
-			{
-				return NULL;
-			}*/
+		pthread_mutex_lock(&(lock));
 		
-			if(!arr[i].flag)
+			if(*((char*)arr[i]) == '0')
 			{
 				break;
 			}
-		pthread_mutex_unlock(&(locks[i]));
+		pthread_mutex_unlock(&(lock));
 	}
 	
 	if(i==POOLSIZE)
 	{
+		pthread_mutex_unlock(&lock);
 		return NULL;
 	}
-	arr[i].flag = 1;
-	pthread_mutex_unlock(&(locks[i]));
 	
-	return arr[i].ptr;
+	*((char* )arr[i]) = '1';
+	pthread_mutex_unlock(&(lock));
+	
+	return arr[i]+offset;
 }
 
 int ret(void* pt, int blocksize)
 {
-	int i;
-	
-	for(i = 0; i<POOLSIZE; i++)
-	{
-	pthread_mutex_lock(&(locks[i]));
-		/*if((arr+i) == NULL)
-		{
-			pthread_mutex_unlock(&(locks[i]));
-			return POOLDEAD;
-		}*/
-		
-		if(pt==arr[i].ptr)
-		{
-			arr[i].ptr = memset(arr[i].ptr, 0, blocksize); 
-			if((arr+i) == NULL)
-			{
-				pthread_mutex_unlock(&(locks[i]));
-				return MEMSETFAIL;
-			}
-			arr[i].flag = 0;
-			pthread_mutex_unlock(&(locks[i]));
-			return ALLOK;
-		}
-	pthread_mutex_unlock(&(locks[i]));
-	}
-	
-	if(i==POOLSIZE)
-	{
-		return NOTFOUND;														//See what can be done if this is returned?
-	}
+	pt = memset(pt, 0, blocksize);
+	*((char*)(pt-offset)) = '0';
 }
 
 /*int main()
 {
 	init_pool(8);
 	//int dummy[10000];
-	int j = 0;
+	int j = 1;
 	int* i[40];
-	
+	i[0] = (int *) alloc();
+	*(i[0]) = 0;
 	for(; j<20; j++)
 	{
 		i[j] = (int *) alloc();
 		*(i[j]) = 10000*j;
-		printf("%d\n", *(i[j]));
+		printf("%d %d\n", *(i[j]), *(i[j-1]));
 	}
 	
 	for(; j<40; j++)
 	{
 		ret(i[j-20], 8);
 		i[j] = (int *) alloc();
-		//*(i[j]) = 2147483647;  
+		*(i[j]) = 2147483647;  
 		printf("%d\n", *(i[j]));
 	}
 	
