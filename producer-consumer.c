@@ -2,74 +2,105 @@
 #include "mempool.h"
 #include <pthread.h>
 #include <semaphore.h>
+#include <errno.h>
+#include <mqueue.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+#include <string.h>
 
 pthread_t consumer, producer;
 pthread_barrier_t b, c;
 sem_t make, use;
+pthread_mutex_t qu;
 
-void* mem[20];
+#define QUEUE_PERMISSIONS 0760
+#define MAX_MESSAGES 35
+#define MAX_MSG_SIZE 256
+#define MSG_BUFFER_SIZE MAX_MSG_SIZE + 10
+
+mqd_t global;
+
+createQ()
+{
+	struct mq_attr buf;        /* buffer for stat info */
+    buf.mq_msgsize = MAX_MSG_SIZE;
+    buf.mq_maxmsg = MAX_MESSAGES;
+    
+    int flag = O_RDWR | O_NONBLOCK | O_CREAT;
+    
+	global = mq_open("/test", flag, QUEUE_PERMISSIONS, &buf);
+	
+	char *buffer = (char*) malloc(MAX_MSG_SIZE);
+	int pri = 1;
+	if(global<0)
+	perror("mq_open()");
+	while(1)		//to clear the queue of any garbage data
+	{
+		int ret = mq_receive(global, buffer, MSG_BUFFER_SIZE, &pri);
+		if(ret<0)
+		{
+			break;
+		}
+	}
+	free(buffer);
+}
 
 void* produce(void* dummy)
 {
+	int *ptr;
+	int ctr = 0;
 	while(1)
 	{
-		//printf("%s", "producer spawned \n");
-		int index = 0;
-		pthread_barrier_wait(&b);
-		for(; index<20; index++)
+		sem_wait(&make);
+		ptr = (int*) alloc();
+		*ptr = ctr;
+		pthread_mutex_lock(&qu);
+		if(mq_send(global, (char*)(&ptr), MAX_MSG_SIZE, 1)==-1)
 		{
-			//printf("%s", "producer crossed barrier \n");
-			sem_wait(&use);
-			ret(mem[index], 8);
-			//printf("%s", "returned \n");
+			ret((void*)ptr, 4);
+			perror("mq_send()");
+			pthread_mutex_unlock(&qu);
+			ctr++;
+			continue;
 		}
-		
-		int temp;
-		
-		for(temp = 0; temp<20; temp++)
-		{	
-			sem_post(&make);
-		}
-		pthread_barrier_wait(&c);
+		pthread_mutex_unlock(&qu);
+		ctr++;
+		sem_post(&use);
 	}
 }
 
 void* consume(void* dummy)
 {
-	int sentinel;
-	printf("%s", "Press any non zero integer then <Enter>\n");
-	scanf("%d", &sentinel);
-	while(sentinel)
+	char sentinel;
+	printf("%s", "Press <Enter>\n");
+	scanf("%c", &sentinel);
+	int *temp;
+	int pri = 1;
+	while(1)
 	{
-		int index = 0;
-		for(; index<20; index++)
+		sem_wait(&use);
+		pthread_mutex_lock(&qu);
+		if(mq_receive(global, (char*)(&temp), MSG_BUFFER_SIZE, &pri)<0)
 		{
-			sem_wait(&make);
-			mem[index] = alloc();
-			int *temp = mem;
-			*temp = index;
-			printf("%d\n", *temp);
+			perror("mq_receive()");
+			pthread_mutex_unlock(&qu);
+			continue;
 		}
-		printf("%s", "Press 0 and <Enter> followed by ctrl+z to terminate. Else press non zero number and <Enter> to continue\n");
-		scanf("%d", &sentinel);
-		int temp; 
-		for(temp = 0; temp<20; temp++)
-		{	
-			sem_post(&use);
-		}
-		pthread_barrier_wait(&b);
-		pthread_barrier_wait(&c);
+		pthread_mutex_unlock(&qu);
+		printf("%d\n", *temp);
+		ret((void*)temp, 4);
+		sem_post(&make);
 	}
 }	
 
 int main()
 {
-	
-	int check = init_pool(8);
-	sem_init(&make, 0, 20);
+	pthread_mutex_init(&qu, 0);
+	int check = init_pool(4);
+	sem_init(&make, 0, 19);
 	sem_init(&use, 0, 0);
-	pthread_barrier_init(&b, 0, 2);
-	pthread_barrier_init(&c, 0, 2);
+	createQ();
 	pthread_create(&producer, 0, produce, NULL);
 	pthread_create(&consumer, 0, consume, NULL);
 	pthread_join(producer, 0);
