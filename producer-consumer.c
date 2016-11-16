@@ -13,24 +13,20 @@ pthread_t consumer, producer;
 pthread_barrier_t b, c;
 sem_t make, use;
 pthread_mutex_t qu;
+mqd_t global;
 
 #define QUEUE_PERMISSIONS 0760
 #define MAX_MESSAGES 35
 #define MAX_MSG_SIZE 256
 #define MSG_BUFFER_SIZE MAX_MSG_SIZE + 10
 
-mqd_t global;
-
 createQ()
 {
 	struct mq_attr buf;        /* buffer for stat info */
-    buf.mq_msgsize = MAX_MSG_SIZE;
-    buf.mq_maxmsg = MAX_MESSAGES;
-    
-    int flag = O_RDWR | O_NONBLOCK | O_CREAT;
-    
+    	buf.mq_msgsize = MAX_MSG_SIZE;
+    	buf.mq_maxmsg = MAX_MESSAGES;
+    	int flag = O_RDWR | O_NONBLOCK | O_CREAT;
 	global = mq_open("/test", flag, QUEUE_PERMISSIONS, &buf);
-	
 	char *buffer = (char*) malloc(MAX_MSG_SIZE);
 	int pri = 1;
 	if(global<0)
